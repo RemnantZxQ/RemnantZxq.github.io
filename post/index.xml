@@ -7,10 +7,10 @@
         <generator>Hugo -- gohugo.io</generator>
         <language>zh-cn</language>
         <copyright>张小乔</copyright>
-        <lastBuildDate>Thu, 05 Sep 2024 21:47:05 +0800</lastBuildDate><atom:link href="https://RemnantZxQ.github.io/post/index.xml" rel="self" type="application/rss+xml" /><item>
+        <lastBuildDate>Fri, 06 Sep 2024 21:47:05 +0800</lastBuildDate><atom:link href="https://RemnantZxQ.github.io/post/index.xml" rel="self" type="application/rss+xml" /><item>
         <title>0906八股</title>
         <link>https://RemnantZxQ.github.io/p/0906%E5%85%AB%E8%82%A1/</link>
-        <pubDate>Thu, 05 Sep 2024 21:47:05 +0800</pubDate>
+        <pubDate>Fri, 06 Sep 2024 21:47:05 +0800</pubDate>
         
         <guid>https://RemnantZxQ.github.io/p/0906%E5%85%AB%E8%82%A1/</guid>
         <description>&lt;h1 id=&#34;0906经典八股总结&#34;&gt;0906经典八股总结
@@ -25,6 +25,51 @@
 &lt;li&gt;socket&lt;/li&gt;
 &lt;/ul&gt;
 &lt;p&gt;Linux 内核提供了不少进程间通信的方式，其中最简单的方式就是管道，管道分为「匿名管道」和「命名管道」。匿名管道顾名思义，它没有名字标识，匿名管道是特殊文件只存在于内存，没有存在于文件系统中，shell 命令中的「|」竖线就是匿名管道，通信的数据是无格式的流并且大小受限，通信的方式是单向的，数据只能在一个方向上流动，如果要双向通信，需要创建两个管道，再来匿名管道是只能用于存在父子关系的进程间通信，匿名管道的生命周期随着进程创建而建立，随着进程终止而消失。命名管道突破了匿名管道只能在亲缘关系进程间的通信限制，因为使用命名管道的前提，需要在文件系统创建一个类型为 p 的设备文件，那么毫无关系的进程就可以通过这个设备文件进行通信。另外，不管是匿名管道还是命名管道，进程写入的数据都是缓存在内核中，另一个进程读取数据时候自然也是从内核中获取，同时通信数据都遵循先进先出原则，不支持 lseek 之类的文件定位操作。消息队列克服了管道通信的数据是无格式的字节流的问题，消息队列实际上是保存在内核的「消息链表」，消息队列的消息体是可以用户自定义的数据类型，发送数据时，会被分成一个一个独立的消息体，当然接收数据时，也要与发送方发送的消息体的数据类型保持一致，这样才能保证读取的数据是正确的。消息队列通信的速度不是最及时的，毕竟每次数据的写入和读取都需要经过用户态与内核态之间的拷贝过程。共享内存可以解决消息队列通信中用户态与内核态之间数据拷贝过程带来的开销，它直接分配一个共享空间，每个进程都可以直接访问，就像访问进程自己的空间一样快捷方便，不需要陷入内核态或者系统调用，大大提高了通信的速度，享有最快的进程间通信方式之名。但是便捷高效的共享内存通信，带来新的问题，多进程竞争同个共享资源会造成数据的错乱。那么，就需要信号量来保护共享资源，以确保任何时刻只能有一个进程访问共享资源，这种方式就是互斥访问。信号量不仅可以实现访问的互斥性，还可以实现进程间的同步，信号量其实是一个计数器，表示的是资源个数，其值可以通过两个原子操作来控制，分别是 P 操作和 V 操作。与信号量名字很相似的叫信号，它俩名字虽然相似，但功能一点儿都不一样。信号是异步通信机制，信号可以在应用进程和内核之间直接交互，内核也可以利用信号来通知用户空间的进程发生了哪些系统事件，信号事件的来源主要有硬件来源（如键盘 Cltr+C ）和软件来源（如 kill 命令），一旦有信号发生，进程有三种方式响应信号 1. 执行默认操作、2. 捕捉信号、3. 忽略信号。有两个信号是应用进程无法捕捉和忽略的，即 SIGKILL 和 SIGSTOP，这是为了方便我们能在任何时候结束或停止某个进程。前面说到的通信机制，都是工作于同一台主机，如果要与不同主机的进程间通信，那么就需要 Socket 通信了。Socket 实际上不仅用于不同的主机进程间通信，还可以用于本地主机进程间通信，可根据创建 Socket 的类型不同，分为三种常见的通信方式，一个是基于 TCP 协议的通信方式，一个是基于 UDP 协议的通信方式，一个是本地进程间通信方式。&lt;/p&gt;
+&lt;h2 id=&#34;2-mvcc实现原理&#34;&gt;2. MVCC实现原理
+&lt;/h2&gt;&lt;p&gt;MVCC允许多个事务同时读取同一行数据，而不会彼此阻塞，每个事务看到的数据版本是该事务开始时的数据版本。这意味着，如果其他事务在此期间修改了数据，正在运行的事务仍然看到的是它开始时的数据状态，从而实现了非阻塞读操作。&lt;/p&gt;
+&lt;p&gt;对于「读提交」和「可重复读」隔离级别的事务来说，它们是通过 Read View 来实现的，它们的区别在于创建 Read View 的时机不同，大家可以把 Read View 理解成一个数据快照，就像相机拍照那样，定格某一时刻的风景。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;「读提交」隔离级别是在「每个select语句执行前」都会重新生成一个 Read View。&lt;/li&gt;
+&lt;li&gt;「可重复读」隔离级别是执行第一条select时，生成一个 Read View，然后整个事务期间都在用这个 Read View。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Read View 有四个重要的字段：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;m_ids ：指的是在创建 Read View 时，当前数据库中「活跃事务」的&lt;strong&gt;事务 id 列表&lt;/strong&gt;，注意是一个列表，&lt;strong&gt;“活跃事务”指的就是，启动了但还没提交的事务&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;min_trx_id ：指的是在创建 Read View 时，当前数据库中「活跃事务」中事务 id 最小的事务，也就是 m_ids 的最小值。&lt;/li&gt;
+&lt;li&gt;max_trx_id ：这个并不是 m_ids 的最大值，而是创建 Read View 时当前数据库中应该给下一个事务的 id 值，也就是全局事务中最大的事务 id 值 + 1。&lt;/li&gt;
+&lt;li&gt;creator_trx_id ：指的是&lt;strong&gt;创建该 Read View 的事务的事务 id&lt;/strong&gt;。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;对于使用 InnoDB 存储引擎的数据库表，它的聚簇索引记录中都包含下面两个隐藏列：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;trx_id，当一个事务对某条聚簇索引记录进行改动时，就会把&lt;strong&gt;该事务的事务 id 记录在 trx_id 隐藏列里&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;roll_pointer，每次对某条聚簇索引记录进行改动时，都会把旧版本的记录写入到 undo 日志中，然后&lt;strong&gt;这个隐藏列是个指针，指向每一个旧版本记录&lt;/strong&gt;，于是就可以通过它找到修改前的记录。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;在创建 Read View 后，我们可以将记录中的 trx_id 划分这三种情况：
+&lt;img src=&#34;https://RemnantZxQ.github.io/p/0906%E5%85%AB%E8%82%A1/image.png&#34;
+	width=&#34;707&#34;
+	height=&#34;332&#34;
+	srcset=&#34;https://RemnantZxQ.github.io/p/0906%E5%85%AB%E8%82%A1/image_hu16919514638506925172.png 480w, https://RemnantZxQ.github.io/p/0906%E5%85%AB%E8%82%A1/image_hu13067237315869809194.png 1024w&#34;
+	loading=&#34;lazy&#34;
+	
+		alt=&#34;alt text&#34;
+	
+	
+		class=&#34;gallery-image&#34; 
+		data-flex-grow=&#34;212&#34;
+		data-flex-basis=&#34;511px&#34;
+	
+&gt;
+一个事务去访问记录的时候，除了自己的更新记录总是可见之外，还有这几种情况：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;如果记录的 trx_id 值小于 Read View 中的 min_trx_id 值，表示这个版本的记录是在创建 Read View &lt;strong&gt;前&lt;/strong&gt;已经提交的事务生成的，所以该版本的记录对当前事务&lt;strong&gt;可见&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;如果记录的 trx_id 值大于等于 Read View 中的 max_trx_id 值，表示这个版本的记录是在创建 Read View &lt;strong&gt;后&lt;/strong&gt;才启动的事务生成的，所以该版本的记录对当前事务&lt;strong&gt;不可见&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;如果记录的 trx_id 值在 Read View 的 min_trx_id 和 max_trx_id 之间，需要判断 trx_id 是否在 m_ids 列表中：
+&lt;ul&gt;
+&lt;li&gt;如果记录的 trx_id &lt;strong&gt;在&lt;/strong&gt; m_ids 列表中，表示生成该版本记录的活跃事务依然活跃着（还没提交事务），所以该版本的记录对当前事务&lt;strong&gt;不可见&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;如果记录的 trx_id &lt;strong&gt;不在&lt;/strong&gt; m_ids列表中，表示生成该版本记录的活跃事务已经被提交，所以该版本的记录对当前事务&lt;strong&gt;可见&lt;/strong&gt;。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
 </description>
         </item>
         <item>
