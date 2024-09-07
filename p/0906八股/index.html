@@ -290,6 +290,8 @@
   <ol>
     <li><a href="#1-进程之间的通信">1. 进程之间的通信</a></li>
     <li><a href="#2-mvcc实现原理">2. MVCC实现原理</a></li>
+    <li><a href="#3-redis哨兵模式">3. Redis哨兵模式</a></li>
+    <li><a href="#4-redis主从同步中的增量和完全同步怎么实现">4. Redis主从同步中的增量和完全同步怎么实现？</a></li>
   </ol>
 </nav>
         </div>
@@ -346,7 +348,7 @@
 
 
                 <time class="article-time--reading">
-                    阅读时长: 5 分钟
+                    阅读时长: 8 分钟
                 </time>
             </div>
         
@@ -417,6 +419,110 @@
 <li>如果记录的 trx_id <strong>不在</strong> m_ids列表中，表示生成该版本记录的活跃事务已经被提交，所以该版本的记录对当前事务<strong>可见</strong>。</li>
 </ul>
 </li>
+</ul>
+<h2 id="3-redis哨兵模式">3. Redis哨兵模式
+</h2><p>Redis 在 2.8 版本以后提供的哨兵（<em>Sentinel</em>）机制，它的作用是实现主从节点故障转移。它会监测主节点是否存活，如果发现主节点挂了，它就会选举一个从节点切换为主节点，并且把新主节点的相关信息通知给从节点和客户端。
+哨兵节点主要负责三件事情：<strong>监控、选主、通知</strong>。</p>
+<p>当redis集群的主节点故障时，Sentinel集群将从剩余的从节点中选举一个新的主节点，有以下步骤：</p>
+<ul>
+<li>故障节点主观下线（监控心跳）</li>
+<li>故障节点客观下线（投票）</li>
+<li>Sentinel集群选举Leader</li>
+<li>Sentinel Leader决定新主节点</li>
+</ul>
+<p>当Sentinel集群选举出Sentinel Leader后，由Sentinel Leader从redis从节点中选择一个redis节点作为主节点：</p>
+<ul>
+<li>过滤故障的节点</li>
+<li>选择优先级slave-priority最大的从节点作为主节点，如不存在则继续</li>
+<li>选择复制偏移量（数据写入量的字节，记录写了多少数据。主服务器会把偏移量同步给从服务器，当主从的偏移量一致，则数据是完全同步）最大的从节点作为主节点，如不存在则继续</li>
+<li>选择runid（redis每次启动的时候生成随机的runid作为redis的标识）最小的从节点作为主节点
+<img src="/p/0906%E5%85%AB%E8%82%A1/image-1.png"
+	width="720"
+	height="841"
+	srcset="/p/0906%E5%85%AB%E8%82%A1/image-1_hu3002417551776542114.png 480w, /p/0906%E5%85%AB%E8%82%A1/image-1_hu17662767013969621597.png 1024w"
+	loading="lazy"
+	
+		alt="alt text"
+	
+	
+		class="gallery-image" 
+		data-flex-grow="85"
+		data-flex-basis="205px"
+	
+></li>
+</ul>
+<h2 id="4-redis主从同步中的增量和完全同步怎么实现">4. Redis主从同步中的增量和完全同步怎么实现？
+</h2><p>完全同步发生在以下几种情况：</p>
+<ul>
+<li>初次同步：当一个从服务器（slave）首次连接到主服务器（master）时，会进行一次完全同步。</li>
+<li>从服务器数据丢失：如果从服务器数据由于某种原因（如断电）丢失，它会请求进行完全同步。</li>
+<li>主服务器数据发生变化：如果从服务器长时间未与主服务器同步，导致数据差异太大，也可能触发完全同步。</li>
+</ul>
+<p>主从服务器间的第一次同步的过程可分为三个阶段：</p>
+<ul>
+<li>第一阶段是建立链接、协商同步；（从服务器发送SYNC命令，请求开始同步）</li>
+<li>第二阶段是主服务器同步数据给从服务器；（RDB快照 bgsave）</li>
+<li>第三阶段是主服务器发送新写操作命令给从服务器。（replication backlog buffer 存放主服务器最近写操作命令）
+<img src="/p/0906%E5%85%AB%E8%82%A1/image-2.png"
+	width="720"
+	height="370"
+	srcset="/p/0906%E5%85%AB%E8%82%A1/image-2_hu4131827379137813702.png 480w, /p/0906%E5%85%AB%E8%82%A1/image-2_hu26735399700077049.png 1024w"
+	loading="lazy"
+	
+		alt="alt text"
+	
+	
+		class="gallery-image" 
+		data-flex-grow="194"
+		data-flex-basis="467px"
+	
+></li>
+</ul>
+<p>增量同步允许从服务器从断点处继续同步，而不是每次都进行完全同步。它基于PSYNC命令，使用了运行ID（run ID）和复制偏移量（offset）的概念。
+<img src="/p/0906%E5%85%AB%E8%82%A1/image-3.png"
+	width="707"
+	height="617"
+	srcset="/p/0906%E5%85%AB%E8%82%A1/image-3_hu455638402696749961.png 480w, /p/0906%E5%85%AB%E8%82%A1/image-3_hu389185917486929346.png 1024w"
+	loading="lazy"
+	
+		alt="alt text"
+	
+	
+		class="gallery-image" 
+		data-flex-grow="114"
+		data-flex-basis="275px"
+	
+>
+主要有三个步骤：</p>
+<ul>
+<li>从服务器在恢复网络后，会发送 psync 命令给主服务器，此时的 psync 命令里的 offset 参数不是 -1；</li>
+<li>主服务器收到该命令后，然后用 CONTINUE 响应命令告诉从服务器接下来采用增量复制的方式同步数据；</li>
+<li>然后主服务将主从服务器断线期间，所执行的写命令发送给从服务器，然后从服务器执行这些命令。</li>
+</ul>
+<p>那么关键的问题来了，主服务器怎么知道要将哪些增量数据发送给从服务器呢？答案藏在这两个东西里：</p>
+<ul>
+<li>repl_backlog_buffer，是一个「环形」缓冲区，用于主从服务器断连后，从中找到差异的数据；</li>
+<li>replication offset，标记上面那个缓冲区的同步进度，主从服务器都有各自的偏移量，主服务器使用 master_repl_offset 来记录自己「<em>写</em>」到的位置，从服务器使用 slave_repl_offset 来记录自己「<em>读</em>」到的位置。</li>
+</ul>
+<p>网络断开后，当从服务器重新连上主服务器时，从服务器会通过 psync 命令将自己的复制偏移量 slave_repl_offset 发送给主服务器，主服务器根据自己的 master_repl_offset 和 slave_repl_offset 之间的差距，然后来决定对从服务器执行哪种同步操作：</p>
+<ul>
+<li>如果判断出从服务器要读取的数据还在 repl_backlog_buffer 缓冲区里，那么主服务器将采用增量同步的方式；</li>
+<li>相反，如果判断出从服务器要读取的数据已经不存在 repl_backlog_buffer 缓冲区里，那么主服务器将采用全量同步的方式。
+当主服务器在 repl_backlog_buffer 中找到主从服务器差异（增量）的数据后，就会将增量的数据写入到 replication buffer 缓冲区，这个缓冲区我们前面也提到过，它是缓存将要传播给从服务器的命令。
+<img src="/p/0906%E5%85%AB%E8%82%A1/image-4.png"
+	width="720"
+	height="253"
+	srcset="/p/0906%E5%85%AB%E8%82%A1/image-4_hu14226815197695985398.png 480w, /p/0906%E5%85%AB%E8%82%A1/image-4_hu17010790336596787519.png 1024w"
+	loading="lazy"
+	
+		alt="alt text"
+	
+	
+		class="gallery-image" 
+		data-flex-grow="284"
+		data-flex-basis="683px"
+	
+></li>
 </ul>
 
 </section>
